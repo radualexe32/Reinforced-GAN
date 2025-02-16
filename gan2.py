@@ -55,14 +55,10 @@ BETA = 2
 GAMMA_1 = 1
 GAMMA_2 = 2
 
-
 XI_NORM_LIST = (torch.max(torch.abs(XI_LIST)) / torch.abs(XI_LIST)) ** 2
 
 S = 1
 LAM = 1e-2
-
-S_TERMINAL = 1
-S_INITIAL = 0
 
 assert len(XI_LIST) == len(GAMMA_LIST) and torch.max(GAMMA_LIST) == GAMMA_LIST[-1]
 
@@ -136,7 +132,7 @@ def get_mu_from_sigma(sigma_st, phi_stn, W_st):
 
 ## Training
 class S_0(nn.Module):
-    def __init__(self, s_init = S_INITIAL):
+    def __init__(self, s_init = 0):
         super(S_0, self).__init__()
         self.s_0 = nn.Linear(1, 1)
         torch.nn.init.constant_(self.s_0.weight, s_init)
