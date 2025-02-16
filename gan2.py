@@ -1,4 +1,4 @@
-drive_dir = "." #"drive/MyDrive/CFRM/RL/SingleAgent-Stage2"
+drive_dir = "." 
 
 import json
 import math
@@ -29,7 +29,7 @@ N_AGENT = 2
 COST_POWER = 1.5
 
 ## Global Constants
-S_VAL = 1 #245714618646 #1#
+S_VAL = 1
 
 if COST_POWER == 2:
     TR = 0.2
@@ -45,43 +45,30 @@ else:
         TR = 0.2
         XI_LIST = torch.tensor([-2.89, -1.49, -1.18, 1.4, 1.91, 2.7, -2.22, -3.15, 2.63, 2.29]).float() * (-10)
         GAMMA_LIST = torch.tensor([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]).float().to(device = DEVICE)
-# TR = 0.2 #0.2 #0.2 for quad cost 2 agents and 0.4 for 1.5 cost 2 agents #20
 T = 100
 TIMESTAMPS = np.linspace(0, TR, T + 1)[:-1]
 DT = TR / T
-N_SAMPLE = 3000 #500 #128 #128
-ALPHA = 1 #1 #
-BETA = 2 #0.3 #0.5
-# GAMMA_BAR = 8.30864e-14 * S_VAL
-# KAPPA = 2.
+N_SAMPLE = 3000
+ALPHA = 1
+BETA = 2
 
-# GAMMA_1 = GAMMA_BAR*(KAPPA+1)/KAPPA
-# GAMMA_2 = GAMMA_BAR*(KAPPA+1)
 GAMMA_1 = 1
 GAMMA_2 = 2
 
-# XI_LIST = torch.tensor([3, -3]).float()
-# GAMMA_LIST = torch.tensor([GAMMA_1, GAMMA_2]).float().to(device = DEVICE)
-
-# XI_LIST = torch.tensor([-2.89, -1.49, -1.18, 1.4, 1.91, 2.7, -2.22, -3.15, 2.63, 2.29]).float() * (-10) #torch.tensor([3, -3]).float() #torch.tensor([-3, -2, -2, 3, 4]).float() * (-1) #torch.tensor([3.01, 2.92, -2.86, 3.14, 2.90, -3.12, -2.88, 2.90, -2.93, -3.08]).float() #torch.tensor([3, -2, 2, -3]).float() #
-# GAMMA_LIST = torch.tensor([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]).float().to(device = DEVICE) #torch.tensor([GAMMA_1, GAMMA_2]).float().to(device = DEVICE) #torch.tensor([1, 1.2, 1.4, 1.6, 1.8]).float().to(device = DEVICE) # #torch.tensor([1, 1, 1.3, 1.3, 1.6, 1.6, 1.9, 1.9, 2.2, 2.2]).float().to(device = DEVICE) #torch.tensor([1, 1, 2, 2]).float().to(device = DEVICE) #
 
 XI_NORM_LIST = (torch.max(torch.abs(XI_LIST)) / torch.abs(XI_LIST)) ** 2
 
 S = 1
-## 1e-2: power 2 10 agents, power 1.5 2 agents
-## 1e-3: power 2 2 agents
-LAM = 1e-2 #1e-2 for 10 agents #1.08102e-10 * S_VAL #0.1 #
+LAM = 1e-2
 
-S_TERMINAL = 1 #1/3 #245.47
-S_INITIAL = 0 #0 #250 #0#
+S_TERMINAL = 1
+S_INITIAL = 0
 
 assert len(XI_LIST) == len(GAMMA_LIST) and torch.max(GAMMA_LIST) == GAMMA_LIST[-1]
 
 GAMMA_BAR = 1 / torch.sum(1 / GAMMA_LIST)
 GAMMA_MAX = torch.max(GAMMA_LIST)
 N_AGENT = len(XI_LIST)
-# BETA = GAMMA_BAR*S*ALPHA**2 + S_TERMINAL/TR
 
 ## Setup Numpy Counterparts
 GAMMA_LIST_NP = GAMMA_LIST.cpu().numpy().reshape((1, N_AGENT))
