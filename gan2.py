@@ -402,8 +402,7 @@ class DynamicFactory():
                 sigma_st[:,t] = ALPHA + (GAMMA_1 - GAMMA_2) / (GAMMA_1 + GAMMA_2) * (LAM / (2 ** (power - 1) * power)) ** (2 / (power + 2)) * ((GAMMA_1 + GAMMA_2) / 2 * ALPHA ** 2) ** (power / (power + 2)) * (ALPHA / XI_LIST[0]) ** ((4 - 2 * power) / (power + 2)) * g_tilda_prime_0 * XI_LIST[0] / ALPHA
                 mu_st[:,t] = GAMMA_BAR * S * sigma_st[:,t] ** 2 + 1/2 * (GAMMA_1 - GAMMA_2) * sigma_st[:,t] ** 2 * delta_phi_stn[:,t,0] + 1/2 * XI_LIST[0] * sigma_st[:,t] / ALPHA * (GAMMA_1 - GAMMA_2) * (ALPHA - sigma_st[:,t]) * self.W_st[:,t+1]
                 stock_st[:,t+1] = stock_st[:,t] + mu_st[:,t] * DT + sigma_st[:,t] * self.dW_st[:,t]
-        target = BETA * TR + ALPHA * self.W_st[:,-1]
-        stock_st = stock_st + s0 #(target - stock_st[:,-1]).reshape((self.n_sample, 1))
+        stock_st = stock_st + s0
         return phi_dot_stn, phi_stn, mu_st, sigma_st, stock_st
     
     def ground_truth(self, F_exact, H_exact):
@@ -424,14 +423,14 @@ class DynamicFactory():
             phi_stn[:,t+1,:] = phi_stn[:,t,:] + phi_dot_stn[:,t,:] * DT
             mu_st[:,t] = get_mu_from_sigma(sigma_st[:,t].reshape((self.n_sample, 1)), phi_stn[:,t,:].reshape((self.n_sample, 1, N_AGENT)), self.W_st[:,t].reshape((self.n_sample, 1))).reshape((-1,))
             stock_st[:,t+1] = stock_st[:,t] + mu_st[:,t] * DT + sigma_st[:,t] * self.dW_st[:,t]
-        target = BETA * TR + ALPHA * self.W_st[:,-1]
+        target = self.stock_terminal()
         stock_st = stock_st + (target - stock_st[:,-1]).reshape((self.n_sample, 1))
         return phi_dot_stn, phi_stn, mu_st, sigma_st, stock_st
 
     def frictionless_stock(self):
         mu_bar = GAMMA_BAR * (ALPHA ** 2) * S
         sigma_bar = ALPHA
-        target = BETA * TR + ALPHA * self.W_st[:,-1]
+        target = self.stock_terminal()
         stock_st = torch.zeros((self.n_sample, self.T + 1)).to(device = DEVICE)
         for t in range(T):
             stock_st[:,t+1] = stock_st[:,t] + mu_bar * DT + sigma_bar * self.dW_st[:,t]
@@ -445,8 +444,8 @@ class DynamicFactory():
             mu_st[:,t] = mu_bar
         return mu_st
     
-    def pasting(self):
-        pass
+    def stock_terminal(self):
+        return BETA * TR + ALPHA * self.W_st[:,-1]
 
 class LossFactory():
     def __init__(self, dW_st, W_s0 = None, normalize = False):
