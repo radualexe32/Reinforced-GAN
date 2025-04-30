@@ -1,27 +1,29 @@
-drive_dir = "." 
-
+# fmt: off
 import json
 import math
 import torch
 import numpy as np
 from tqdm import tqdm
-import torch.optim as optim
-import torch.nn as nn
+from torch import optim
+from torch import nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.integrate import solve_ivp
 from datetime import datetime
-import pytz, os
+import pytz
+import os
+
+drive_dir = "."
 
 ## Check if CUDA is available
 train_on_gpu = torch.cuda.is_available()
 
 if not train_on_gpu:
-    print('CUDA is not available.  Training on CPU ...')
+    print("CUDA is not available.  Training on CPU ...")
     DEVICE = "cpu"
 else:
-    print('CUDA is available!  Training on GPU ...')
+    print("CUDA is available!  Training on GPU ...")
     DEVICE = "cuda"
 
 ## Regimes
@@ -36,15 +38,14 @@ if COST_POWER == 2:
     if N_AGENT == 10:
         XI_LIST = torch.tensor([-2.89, -1.49, -1.18, 1.4, 1.91, 2.7, -2.22, -3.15, 2.63, 2.29]).float() * (-10)
         GAMMA_LIST = torch.tensor([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]).float().to(device = DEVICE)
+elif N_AGENT == 2:
+    TR = 0.4
+    XI_LIST = torch.tensor([3, -3]).float()
+    GAMMA_LIST = torch.tensor([1, 2]).float().to(device = DEVICE)
 else:
-    if N_AGENT == 2:
-        TR = 0.4
-        XI_LIST = torch.tensor([3, -3]).float()
-        GAMMA_LIST = torch.tensor([1, 2]).float().to(device = DEVICE)
-    else:
-        TR = 0.2
-        XI_LIST = torch.tensor([-2.89, -1.49, -1.18, 1.4, 1.91, 2.7, -2.22, -3.15, 2.63, 2.29]).float() * (-10)
-        GAMMA_LIST = torch.tensor([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]).float().to(device = DEVICE)
+    TR = 0.2
+    XI_LIST = torch.tensor([-2.89, -1.49, -1.18, 1.4, 1.91, 2.7, -2.22, -3.15, 2.63, 2.29]).float() * (-10)
+    GAMMA_LIST = torch.tensor([1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]).float().to(device = DEVICE)
 T = 100
 TIMESTAMPS = np.linspace(0, TR, T + 1)[:-1]
 DT = TR / T
@@ -74,7 +75,7 @@ GAMMA_MAX_NP = GAMMA_MAX.cpu().numpy()
 ###
 
 ## Load G
-with open("eva.txt", "r") as f:
+with open("eva.txt") as f:
     G_MAP = torch.tensor([float(x.strip()) for x in f.readlines()]).to(device=DEVICE)
 
 def get_W(dW_st, W_s0 = None):
@@ -136,7 +137,7 @@ class S_0(nn.Module):
         super(S_0, self).__init__()
         self.s_0 = nn.Linear(1, 1)
         torch.nn.init.constant_(self.s_0.weight, s_init)
-  
+
     def forward(self, x):
         return self.s_0(x)
 
@@ -167,13 +168,12 @@ class ModelFull(nn.Module):
         super(ModelFull, self).__init__()
         self.model = predefined_model
         self.is_discretized = is_discretized
-    
+
     def forward(self, tup):
         t, x = tup
         if self.is_discretized:
             return self.model[t](x)
-        else:
-            return self.model(x)
+        return self.model(x)
 
 ## Construct arbitrary neural network models with optimizer and scheduler
 class ModelFactory:
@@ -216,14 +216,14 @@ class ModelFactory:
             model = Net(self.input_dim, self.hidden_lst, self.output_dim)
             model_list.append(model)
         return model_list
-    
+
     ## TODO: Implement it -- Zhanhao Zhang
     def rnn(self):
         return None
-    
+
     def update_model(self, model):
         self.model = model
-    
+
     def prepare_model(self):
         if self.solver == "Adam":
             optimizer = optim.Adam(self.model.parameters(), lr = self.lr)
@@ -233,7 +233,7 @@ class ModelFactory:
             optimizer = optim.RMSprop(self.model.parameters(), lr = self.lr)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size = self.scheduler_step, gamma = self.decay)
         return self.model, optimizer, scheduler, self.prev_ts
-    
+
     def save_to_file(self, curr_ts = None):
         if curr_ts is None:
             curr_ts = datetime.now(tz=pytz.timezone("America/New_York")).strftime("%Y-%m-%d-%H-%M-%S")
@@ -241,7 +241,7 @@ class ModelFactory:
         torch.save(model_save, f"{self.drive_dir}/Models/{self.algo}__{curr_ts}.pt")
         self.model = self.model.to(device=DEVICE)
         return curr_ts
-    
+
     def load_latest(self):
         ts_lst = [f.strip(".pt").split("__")[1] for f in os.listdir(f"{self.drive_dir}/Models/") if f.endswith(".pt") and f.startswith(self.algo)]
         ts_lst = sorted(ts_lst, reverse=True)
@@ -253,20 +253,20 @@ class ModelFactory:
         model = model.to(device = DEVICE)
         return model, ts
 
-class DynamicFactory():
+class DynamicFactory:
     def __init__(self, dW_st, W_s0 = None):
         self.dW_st = dW_st
         self.W_st = get_W(dW_st, W_s0 = W_s0)
         self.dW_st = self.dW_st.to(device = DEVICE)
         self.n_sample = self.dW_st.shape[0]
         self.T = self.dW_st.shape[1]
-        
+
         ## Auxiliary variables
         self.xi_stn = torch.zeros((self.n_sample, self.T, N_AGENT)).to(device = DEVICE)
         for n in range(N_AGENT):
             self.xi_stn[:,:,n] = XI_LIST[n] * self.W_st[:,1:]
         self.mu_bar = GAMMA_BAR * ALPHA ** 2 * S
-    
+
     def deep_hedging(self, gen_model, dis_model, use_true_mu = False, use_fast_var = False, combo_model = None, clearing_known = True, F_exact = None, H_exact = None, perturb_musigma = False, perturb_phidot = False):
         ## Setup variables
         phi_dot_stn = torch.zeros((self.n_sample, self.T, N_AGENT)).to(device = DEVICE)
@@ -318,7 +318,7 @@ class DynamicFactory():
                 sigma_s = torch.abs(combo_model((combo_offset + t, x_dis)).reshape((-1,)))
             sigma_st[:,t] = sigma_s
             # fast_var_stn = (phi_stn.clone()[:,t,:] * sigma_s.reshape((self.n_sample, 1)) + self.xi_stn[:,t,:]) * sigma_s.reshape((self.n_sample, 1))
-            
+
             ## Discriminator - Mu output
             if use_true_mu:
                 mu_s = get_mu_from_sigma(sigma_s.reshape((self.n_sample, 1)), phi_stn[:,t,:].reshape((self.n_sample, 1, N_AGENT)), self.W_st[:,t].reshape((self.n_sample, 1))).reshape((-1,))
@@ -335,7 +335,7 @@ class DynamicFactory():
                 sigma_st[:,t] += sigma_perturb
                 mu_st[:,t] += mu_perturb
             stock_st[:,t+1] = stock_st[:,t] + mu_st[:,t] * DT + sigma_st[:,t] * self.dW_st[:,t]
-            
+
             ## Generator output
             if not use_fast_var:
                 x_gen = torch.cat((mu_st[:,t].view((self.n_sample, 1)), sigma_st[:,t].view((self.n_sample, 1)), self.W_st[:,t].reshape((self.n_sample, 1)), curr_t), dim=1) #torch.cat((phi_stn[:,t,:], self.W_st[:,t].reshape((self.n_sample, 1)), curr_t), dim=1) #torch.cat((phi_stn[:,t,:], self.W_st[:,t].reshape((self.n_sample, 1)), curr_t), dim=1) #
@@ -352,13 +352,13 @@ class DynamicFactory():
                 phi_dot_stn[:,t,-1] = -torch.sum(phi_dot_stn[:,t,:-1], axis = 1)
                 phi_stn[:,t+1,-1] = S - torch.sum(phi_stn[:,t+1,:-1], axis = 1)
         return phi_dot_stn, phi_stn, mu_st, sigma_st, stock_st
-    
+
     def g_vec(self, x, q = 3/2):
         x_ind = torch.round((torch.abs(x) + 0) / 50 * 500000).long()
         x_inbound = (torch.abs(x) <= 50) + 0
         x_outbound = -torch.sign(x) * q * (q - 1) ** (-(q - 1) / q) * torch.abs(x) ** (2 * (q - 1) / q)
         return torch.sign(x) * G_MAP[x_ind * x_inbound] + x_outbound * (1 - x_inbound)
-        
+
     def leading_order(self, power = 1.5):
         phi_dot_stn = torch.zeros((self.n_sample, self.T, N_AGENT)).to(device = DEVICE)
         phi_stn = torch.zeros((self.n_sample, self.T + 1, N_AGENT)).to(device = DEVICE)
@@ -397,14 +397,14 @@ class DynamicFactory():
                 phi_stn[:,t+1,-1] = S - torch.sum(phi_stn[:,t+1,:-1], axis = 1)
                 delta_phi_stn[:,t+1,-1] = phi_stn[:,t+1,-1] - phi_bar_stn[:,t+1,-1]
                 phi_dot_stn[:,t,:] = (phi_stn[:,t+1,:] - phi_stn[:,t,:]) / DT
-                
+
                 # sigma_st[:,t] = ALPHA + -1.153 * (GAMMA_1 - GAMMA_2) / (GAMMA_1 + GAMMA_2) * (LAM / (1 ** (power - 1) * power)) ** (2 / (power + 2)) * ((GAMMA_1 + GAMMA_2) / 2 * ALPHA ** 2) ** (power / (power + 2)) * (ALPHA / XI_LIST[0]) ** ((4 - 2 * power) / (power + 2)) * XI_LIST[0] / ALPHA
                 sigma_st[:,t] = ALPHA + (GAMMA_1 - GAMMA_2) / (GAMMA_1 + GAMMA_2) * (LAM / (2 ** (power - 1) * power)) ** (2 / (power + 2)) * ((GAMMA_1 + GAMMA_2) / 2 * ALPHA ** 2) ** (power / (power + 2)) * (ALPHA / XI_LIST[0]) ** ((4 - 2 * power) / (power + 2)) * g_tilda_prime_0 * XI_LIST[0] / ALPHA
                 mu_st[:,t] = GAMMA_BAR * S * sigma_st[:,t] ** 2 + 1/2 * (GAMMA_1 - GAMMA_2) * sigma_st[:,t] ** 2 * delta_phi_stn[:,t,0] + 1/2 * XI_LIST[0] * sigma_st[:,t] / ALPHA * (GAMMA_1 - GAMMA_2) * (ALPHA - sigma_st[:,t]) * self.W_st[:,t+1]
                 stock_st[:,t+1] = stock_st[:,t] + mu_st[:,t] * DT + sigma_st[:,t] * self.dW_st[:,t]
         stock_st = stock_st + s0
         return phi_dot_stn, phi_stn, mu_st, sigma_st, stock_st
-    
+
     def ground_truth(self, F_exact, H_exact):
         ## Setup variables
         phi_dot_stn = torch.zeros((self.n_sample, self.T, N_AGENT)).to(device = DEVICE)
@@ -443,11 +443,11 @@ class DynamicFactory():
         for t in range(T):
             mu_st[:,t] = mu_bar
         return mu_st
-    
+
     def stock_terminal(self):
         return BETA * TR + ALPHA * self.W_st[:,-1]
 
-class LossFactory():
+class LossFactory:
     def __init__(self, dW_st, W_s0 = None, normalize = False):
         self.dW_st = dW_st
         self.W_st = get_W(dW_st, W_s0 = W_s0)
@@ -455,7 +455,7 @@ class LossFactory():
         self.n_sample = self.dW_st.shape[0]
         self.T = self.dW_st.shape[1]
         self.normalize = normalize
-    
+
     def utility_loss(self, phi_dot_stn, phi_stn, mu_st, sigma_st, power = 2):
         loss = 0
         for n in range(N_AGENT):
@@ -484,7 +484,7 @@ class LossFactory():
             loss_arr += loss_curr
         loss_mean, loss_se = torch.mean(loss_arr), torch.std(loss_arr) / (n_sample ** 0.5)
         return loss_mean, loss_se
-    
+
     def clearing_loss(self, phi_dot_stn, power = 2):
         loss = torch.abs(torch.sum(phi_dot_stn, axis = 2) / N_AGENT) ** power
         return torch.mean(loss)
@@ -493,7 +493,7 @@ class LossFactory():
         n_sample = phi_dot_stn.shape[0]
         loss_arr = torch.mean(torch.abs(torch.sum(phi_dot_stn, axis = 2) / N_AGENT) ** power, axis = 1)
         return torch.mean(loss_arr), torch.std(loss_arr) / (n_sample ** 0.5)
-    
+
     def clearing_loss_phi(self, phi_stn, power = 2):
         loss = torch.abs(torch.sum(phi_stn, axis = 2) - S) ** power
         return torch.mean(loss)
@@ -536,7 +536,7 @@ class LossFactory():
         loss_st = torch.sum(y_prime_stn / self.n_sample, dim = 2)
         loss = torch.sum(loss_st ** 2) * y_coef
         return loss
-    
+
     def stock_loss(self, stock_st, power = 2):
         target = BETA * TR + ALPHA * self.W_st[:,-1]
         loss = torch.abs(stock_st[:,-1] - target) ** power
@@ -547,7 +547,7 @@ class LossFactory():
         target = BETA * TR + ALPHA * self.W_st[:,-1]
         loss_arr = torch.abs(stock_st[:,-1] - target) ** power
         return torch.mean(loss_arr), torch.std(loss_arr) / (n_sample ** 0.5)
-    
+
     def stock_loss_init(self, stock_st, power = 2):
         target = (BETA - GAMMA_BAR * ALPHA ** 2 * S) * TR
         loss = torch.abs(stock_st[:,0] - target) ** power
@@ -596,11 +596,11 @@ def visualize_comparison(timestamps, arr_lst, round, ts, name, algo_lst, comment
     if name == "phi":
         title = "${\\varphi}_t$"
     elif name in ["phi_dot", "phi_dot_short"]:
-        title = "$\dot{\\varphi}_t$"
+        title = "$\\dot{\\varphi}_t$"
     elif name == "sigma":
-        title = "$\sigma_t$"
+        title = r"$\sigma_t$"
     elif name == "mu":
-        title = "$\mu_t$"
+        title = r"$\mu_t$"
     elif name == "s":
         title = "$S_t$"
     else:
@@ -642,7 +642,7 @@ def visualize_comparison(timestamps, arr_lst, round, ts, name, algo_lst, comment
             ax.legend(loc="center left", bbox_to_anchor=(box2.width*1.3,box2.height*0.5))
 #            ax.legend(loc="lower left", bbox_to_anchor=(box2.width*1.3,box2.height*0.5))
 #            ax.legend(loc="lower left")
-            plt.savefig(f"{drive_dir}/Plots/comp_round={round}_{name}_agent{i+1}_{ts}.png", bbox_inches='tight')
+            plt.savefig(f"{drive_dir}/Plots/comp_round={round}_{name}_agent{i+1}_{ts}.png", bbox_inches="tight")
             plt.close()
     else:
         ax = plt.subplot(111)
@@ -674,7 +674,7 @@ def visualize_comparison(timestamps, arr_lst, round, ts, name, algo_lst, comment
         # else:
         #     ax.legend(loc="lower left")
 #        ax.legend()
-        plt.savefig(f"{drive_dir}/Plots/comp_round={round}_{name}_{ts}.png", bbox_inches='tight')
+        plt.savefig(f"{drive_dir}/Plots/comp_round={round}_{name}_{ts}.png", bbox_inches="tight")
         plt.close()
 
 def prepare_generator(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step, gen_solver = "Adam", use_pretrained_gen = True, use_fast_var = False, clearing_known = True, drive_dir = "."):
@@ -859,7 +859,7 @@ def training_pipeline(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step, gen
             phi_dot_stn_truth, phi_stn_truth, mu_st_truth, sigma_st_truth, stock_st_truth = dynamic_factory.leading_order(power = utility_power)
         stock_st_frictionless = dynamic_factory.frictionless_stock()
         mu_st_frictionless = dynamic_factory.frictionless_mu()
-            
+
         loss_truth_utility = loss_factory.utility_loss(phi_dot_stn_truth, phi_stn_truth, mu_st_truth, sigma_st_truth, power = utility_power) * S_VAL
         loss_truth_stock = loss_factory.stock_loss(stock_st_truth, power = slc(dis_loss, gan_round))
         loss_truth_clearing = loss_factory.clearing_loss(phi_dot_stn_truth, power = utility_power)
@@ -1045,12 +1045,11 @@ def plot_all_trajectories(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step,
     visualize_obs = 0
     if utility_power == 2:
         benchmark_name = "Ground Truth"
+    elif N_AGENT == 2:
+        visualize_obs = -1
+        benchmark_name = "Leading Order"
     else:
-        if N_AGENT == 2:
-            visualize_obs = -1
-            benchmark_name = "Leading Order"
-        else:
-            benchmark_name = "Frictionless"
+        benchmark_name = "Frictionless"
     if utility_power == 1.5 and N_AGENT > 2:
         dct = {
             "Neg Utility Mean": [float(loss_utility_mean_nomu.detach()), float(loss_truth_utility_mean.detach())],
@@ -1060,7 +1059,7 @@ def plot_all_trajectories(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step,
             "Stock Loss SE": [float(loss_stock_se_nomu.detach()), float(loss_truth_stock_se.detach())],
             "Clearing Loss SE": [float(loss_clearing_se_nomu.detach()), float(loss_truth_clearing_se.detach())],
             "S0": [float(s0_nomu.detach()), float(s0_truth.detach())],
-            "Type": ["Mu Unknown", benchmark_name]
+            "Type": ["Mu Unknown", benchmark_name],
         }
     else:
         dct = {
@@ -1071,11 +1070,11 @@ def plot_all_trajectories(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step,
             "Stock Loss SE": [float(loss_stock_se_nomu.detach()), float(loss_stock_se.detach()), float(loss_truth_stock_se.detach())],
             "Clearing Loss SE": [float(loss_clearing_se_nomu.detach()), float(loss_clearing_se.detach()), float(loss_truth_clearing_se.detach())],
             "S0": [float(s0_nomu.detach()), float(s0.detach()), float(s0_truth.detach())],
-            "Type": ["Mu Unknown", "Mu Known", benchmark_name]
+            "Type": ["Mu Unknown", "Mu Known", benchmark_name],
         }
     df = pd.DataFrame.from_dict(dct)
     df.to_csv(f"Tables/{drive_dir}.csv", index = False)
-    
+
     if N_AGENT == 2:
         AGENT_LST = [0, 1]
     elif utility_power == 2:
@@ -1083,19 +1082,19 @@ def plot_all_trajectories(gen_hidden_lst, gen_lr, gen_decay, gen_scheduler_step,
     else:
         AGENT_LST = list(range(N_AGENT))
     if utility_power == 1.5 and N_AGENT > 2:
-        visualize_comparison(TIMESTAMPS, [mu_st_nomu[visualize_obs,:]], 0, drive_dir, "mu", ["$\mu$ Unknown"], comment = "")
-        visualize_comparison(TIMESTAMPS, [sigma_st_nomu[visualize_obs,:]], 0, drive_dir, "sigma", ["$\mu$ Unknown"], comment = "")
+        visualize_comparison(TIMESTAMPS, [mu_st_nomu[visualize_obs,:]], 0, drive_dir, "mu", [r"$\mu$ Unknown"], comment = "")
+        visualize_comparison(TIMESTAMPS, [sigma_st_nomu[visualize_obs,:]], 0, drive_dir, "sigma", [r"$\mu$ Unknown"], comment = "")
         visualize_comparison(TIMESTAMPS, [phi_dot_stn_nomu[visualize_obs,:,agent] for agent in AGENT_LST], 0, drive_dir, "phi_dot", [f"Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
         visualize_comparison(TIMESTAMPS, [phi_stn_nomu[visualize_obs,:-1,agent] for agent in AGENT_LST], 0, drive_dir, "phi", [f"Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
     else:
-        visualize_comparison(TIMESTAMPS, [mu_st_nomu[visualize_obs,:], mu_st[visualize_obs,:], mu_st_truth[visualize_obs,:]], 0, drive_dir, "mu", ["$\mu$ Unknown", "$\mu$ Known", benchmark_name], comment = "")
-        visualize_comparison(TIMESTAMPS, [sigma_st_nomu[visualize_obs,:], sigma_st[visualize_obs,:], sigma_st_truth[visualize_obs,:]], 0, drive_dir, "sigma", ["$\mu$ Unknown", "$\mu$ Known", benchmark_name], comment = "")
+        visualize_comparison(TIMESTAMPS, [mu_st_nomu[visualize_obs,:], mu_st[visualize_obs,:], mu_st_truth[visualize_obs,:]], 0, drive_dir, "mu", [r"$\mu$ Unknown", r"$\mu$ Known", benchmark_name], comment = "")
+        visualize_comparison(TIMESTAMPS, [sigma_st_nomu[visualize_obs,:], sigma_st[visualize_obs,:], sigma_st_truth[visualize_obs,:]], 0, drive_dir, "sigma", [r"$\mu$ Unknown", r"$\mu$ Known", benchmark_name], comment = "")
         # if utility_power == 1.5:
-        visualize_comparison(TIMESTAMPS, [phi_dot_stn_nomu[visualize_obs,:,agent] for agent in AGENT_LST] + [phi_dot_stn[visualize_obs,:,agent] for agent in AGENT_LST] + [phi_dot_stn_truth[visualize_obs,:,agent] for agent in AGENT_LST], 0, drive_dir, "phi_dot", [f"$\mu$ Unknown\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"$\mu$ Known\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"{benchmark_name}\n - Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
-        visualize_comparison(TIMESTAMPS, [phi_stn_nomu[visualize_obs,:-1,agent] for agent in AGENT_LST] + [phi_stn[visualize_obs,:-1,agent] for agent in AGENT_LST] + [phi_stn_truth[visualize_obs,:-1,agent] for agent in AGENT_LST], 0, drive_dir, "phi", [f"$\mu$ Unknown\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"$\mu$ Known\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"{benchmark_name}\n - Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
+        visualize_comparison(TIMESTAMPS, [phi_dot_stn_nomu[visualize_obs,:,agent] for agent in AGENT_LST] + [phi_dot_stn[visualize_obs,:,agent] for agent in AGENT_LST] + [phi_dot_stn_truth[visualize_obs,:,agent] for agent in AGENT_LST], 0, drive_dir, "phi_dot", [f"$\\mu$ Unknown\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"$\\mu$ Known\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"{benchmark_name}\n - Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
+        visualize_comparison(TIMESTAMPS, [phi_stn_nomu[visualize_obs,:-1,agent] for agent in AGENT_LST] + [phi_stn[visualize_obs,:-1,agent] for agent in AGENT_LST] + [phi_stn_truth[visualize_obs,:-1,agent] for agent in AGENT_LST], 0, drive_dir, "phi", [f"$\\mu$ Unknown\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"$\\mu$ Known\n - Agent {agent + 1}" for agent in AGENT_LST] + [f"{benchmark_name}\n - Agent {agent + 1}" for agent in AGENT_LST], comment = "", expand = False)
         # else:
-        visualize_comparison(TIMESTAMPS, [phi_dot_stn_nomu[visualize_obs,:], phi_dot_stn[visualize_obs,:], phi_dot_stn_truth[visualize_obs,:]], 0, drive_dir, "phi_dot", ["$\mu$ Unknown", "$\mu$ Known", benchmark_name], comment = "", expand = True)
-        visualize_comparison(TIMESTAMPS, [phi_stn_nomu[visualize_obs,:-1], phi_stn[visualize_obs,:-1], phi_stn_truth[visualize_obs,:-1]], 0, drive_dir, "phi", ["$\mu$ Unknown", "$\mu$ Known", benchmark_name], comment = "", expand = True)
+        visualize_comparison(TIMESTAMPS, [phi_dot_stn_nomu[visualize_obs,:], phi_dot_stn[visualize_obs,:], phi_dot_stn_truth[visualize_obs,:]], 0, drive_dir, "phi_dot", [r"$\mu$ Unknown", r"$\mu$ Known", benchmark_name], comment = "", expand = True)
+        visualize_comparison(TIMESTAMPS, [phi_stn_nomu[visualize_obs,:-1], phi_stn[visualize_obs,:-1], phi_stn_truth[visualize_obs,:-1]], 0, drive_dir, "phi", [r"$\mu$ Unknown", r"$\mu$ Known", benchmark_name], comment = "", expand = True)
 
 ## Begin Training
 train_args = {
@@ -1137,8 +1136,8 @@ train_args = {
     "seed": 0,
     "ckpt_freq": 10000,
     "use_combo": False,
-    "clearing_known": False
+    "clearing_known": False,
 }
-# generator, discriminator = training_pipeline(train_args = train_args, **train_args)
-# inference(generator, discriminator, randomized = False, clearing_known = train_args["clearing_known"])
+generator, discriminator = training_pipeline(train_args = train_args, **train_args)
+inference(generator, discriminator, randomized = False, clearing_known = train_args["clearing_known"])
 plot_all_trajectories(**train_args)
